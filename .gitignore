@@ -1,0 +1,5 @@
+blogueandoAndoAPI/.idea/vcs.xml
+blogueandoAndoAPI/data.db
+.gitattributes
+.env
+.env.example
