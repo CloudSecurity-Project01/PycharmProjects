@@ -7,6 +7,7 @@ class User(BaseModel):
     id: Optional[int] = None
     name: str
     email: str
+    is_verified: bool
 
 
 class UserIn(User):
@@ -17,13 +18,13 @@ class AuthenticationIn(BaseModel):
     email: str
     password: str
 
-
 class Authentication(AuthenticationIn):
     model_config = ConfigDict(from_attributes=True)
-    username: str
-    id: int
+    name: str
 
-
+class Token(BaseModel):
+    access_token: str
+    token_type: str
 
 
 

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
 from blogueandoAndoAPI.models.tag import TagIn, Tag
-from blogueandoAndoAPI.database import tag_table, database, post_tag_table
+from blogueandoAndoAPI.helpers.database import tag_table, database, post_tag_table
 
 router = APIRouter()
 

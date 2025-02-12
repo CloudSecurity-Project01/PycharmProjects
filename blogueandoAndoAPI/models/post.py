@@ -8,28 +8,23 @@ class PostIn(BaseModel):
     content: str
     user_id: int
 
-
 class Post(PostIn):
     model_config = ConfigDict(from_attributes=True)
     id: int
     publication_date: str
-    public: bool
+    is_public: bool
     rating: Optional[int]
     tags: Optional[list[str]]
-
+    user_name: str
 
 class MyPostIn(BaseModel):
     user_id: int
-
 
 class PostRating(BaseModel):
     user_id: int
     post_id: int
     rating: int
 
-
 class PostTag(BaseModel):
     post_id: int
     tag_id: int
-
-

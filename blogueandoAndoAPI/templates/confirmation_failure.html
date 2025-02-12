@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Error de Confirmación - BlogueandoAndo</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f9f9;
+            color: #333;
+            text-align: center;
+            padding: 50px;
+        }
+        h1 {
+            color: #dc3545;
+        }
+        p {
+            font-size: 18px;
+        }
+        .icon {
+            font-size: 50px;
+            color: #dc3545;
+        }
+        .container {
+            background-color: #ffffff;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+        .btn {
+            background-color: #007bff;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            text-decoration: none;
+            font-size: 16px;
+            margin-top: 20px;
+        }
+        .btn:hover {
+            background-color: #0056b3;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <span class="icon">&#x274C;</span>
+        <h1>Error</h1>
+        <p>{{ message }}</p>
+
+        <a href="{{ resend_email_url }}" class="btn">Reenviar correo de confirmación</a>
+
+        <footer>
+            <p><strong>BlogueandoAndo</strong> &copy; 2025</p>
+        </footer>
+    </div>
+</body>
+</html>

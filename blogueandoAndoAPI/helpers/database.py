@@ -1,6 +1,6 @@
 import databases
 import sqlalchemy
-from blogueandoAndoAPI.config import config
+from blogueandoAndoAPI.helpers.config import config
 
 
 metadata = sqlalchemy.MetaData()
@@ -11,7 +11,8 @@ user_table = sqlalchemy.Table(
     sqlalchemy.Column("id", sqlalchemy.Integer, primary_key=True),
     sqlalchemy.Column("name", sqlalchemy.String, nullable=False),
     sqlalchemy.Column("email", sqlalchemy.String, unique=True, nullable=False),
-    sqlalchemy.Column("password", sqlalchemy.String, nullable=False)
+    sqlalchemy.Column("password", sqlalchemy.String, nullable=False),
+    sqlalchemy.Column("is_verified", sqlalchemy.Boolean, nullable=False, default=False)
     )
 
 post_table = sqlalchemy.Table(
@@ -22,7 +23,7 @@ post_table = sqlalchemy.Table(
     sqlalchemy.Column("title", sqlalchemy.String, nullable=False),
     sqlalchemy.Column("content", sqlalchemy.String),
     sqlalchemy.Column("publication_date", sqlalchemy.String, nullable=False),
-    sqlalchemy.Column("public", sqlalchemy.Boolean, nullable=False, default=True)
+    sqlalchemy.Column("is_public", sqlalchemy.Boolean, nullable=False, default=True)
 )
 
 
@@ -31,7 +32,7 @@ rating_table = sqlalchemy.Table(
     metadata,
     sqlalchemy.Column("user_id", sqlalchemy.ForeignKey("users.id"), primary_key=True, nullable=False),
     sqlalchemy.Column("post_id", sqlalchemy.ForeignKey("posts.id"), primary_key=True, nullable=False),
-    sqlalchemy.Column("rating", sqlalchemy.Integer, nullable=False)
+    sqlalchemy.Column("rating", sqlalchemy.Float, nullable=False)
 )
 
 post_tag_table = sqlalchemy.Table(
