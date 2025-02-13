@@ -9,10 +9,8 @@ class User(BaseModel):
     email: str
     is_verified: bool
 
-
 class UserIn(User):
     password: str
-
 
 class AuthenticationIn(BaseModel):
     email: str

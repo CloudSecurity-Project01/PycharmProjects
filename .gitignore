@@ -6,5 +6,6 @@ venv/
 blogueandoAndoAPI/__pycache__/
 blogueandoAndoAPI/models/__pycache__/
 blogueandoAndoAPI/routers/__pycache__/
+blogueandoAndoAPI/helpers/__pycache__/
 blogueandoAndoAPI/.idea/vcs.xml
 blogueandoAndoAPI/data.db

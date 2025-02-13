@@ -4,15 +4,6 @@ from blogueandoAndoAPI.helpers.database import tag_table, database, post_tag_tab
 
 router = APIRouter()
 
-
-@router.post("/create_tag", response_model=Tag)
-async def create_tag(tag: TagIn):
-    data = tag.dict()
-    query = tag_table.insert().values(data)
-    last_record_id = await database.execute(query)
-    return {**data, "id": last_record_id}
-
-
 @router.get("/tags", response_model=list[Tag])
 async def all_tag():
     query = tag_table.select()

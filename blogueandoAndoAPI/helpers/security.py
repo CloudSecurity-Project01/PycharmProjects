@@ -1,10 +1,12 @@
-from fastapi import HTTPException, status, Depends
+from fastapi import HTTPException, status, Depends, Security
 from fastapi.security import OAuth2PasswordBearer
 from datetime import datetime, timedelta, timezone
 import jwt
-from blogueandoAndoAPI.helpers.database import database
+from typing import Optional
+from blogueandoAndoAPI.helpers.database import database, user_table
 from passlib.context import CryptContext
 from dotenv import load_dotenv
+import sqlalchemy as sa
 import os
 
 load_dotenv()
@@ -41,37 +43,66 @@ def create_email_confirmation_token(user_id: str, expires_delta: timedelta = tim
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
-async def get_current_user(token: str = Depends(oauth2_scheme)):
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token", auto_error=False)  # Allow missing tokens
+
+async def get_user_from_token(token: str) -> Optional[dict]:
+    if not token:
+        return None
+
     try:
-        # Decode the token
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         email: str = payload.get("sub")
 
-        if email is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Token is invalid",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
+        if not email:
+            return None
 
-        query = """
-                SELECT u.id, u.name as user_name, u.email
-                FROM users u
-                WHERE u.email == :email
-                """
-        user = await database.fetch_one(query, values={"email": email})
+        query = (
+            sa.select(user_table.c.id, user_table.c.name.label("user_name"), user_table.c.email)
+            .where(user_table.c.email == email)
+        )
 
+        user = await database.fetch_one(query)
+
+        return user
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token has expired. Please log in again.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    except jwt.PyJWTError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+async def get_current_user(token: str = Depends(oauth2_scheme)):
+    try:
+        user = await get_user_from_token(token)
+        
         if not user:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found",
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired token",
+                headers={"WWW-Authenticate": "Bearer"},
             )
 
         return user
 
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token has expired. Please log in again.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
     except jwt.PyJWTError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token",
+            detail="Invalid token.",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+async def get_current_user_optional(token: str = Security(oauth2_scheme)) -> Optional[dict]:
+    return await get_user_from_token(token)

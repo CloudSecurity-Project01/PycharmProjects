@@ -27,4 +27,4 @@ class PostRating(BaseModel):
 
 class PostTag(BaseModel):
     post_id: int
-    tag_id: int
+    tags: list[str]
