@@ -1,7 +1,6 @@
 from fastapi import APIRouter, HTTPException, Query, Depends
-from blogueandoAndoAPI.models.post import PostIn, Post, MyPostIn, PostRating, PostTag
+from blogueandoAndoAPI.models.post import PostIn, Post, Pagination, PostRating, PostTag
 from blogueandoAndoAPI.models.tag import TagIn
-from blogueandoAndoAPI.models.user import AuthenticationIn, User
 from blogueandoAndoAPI.routers.tag import get_tags, find_tags
 from blogueandoAndoAPI.helpers.database import user_table, post_table, rating_table, post_tag_table, database, tag_table
 from blogueandoAndoAPI.helpers.security import get_current_user_optional, get_current_user
@@ -22,8 +21,9 @@ async def create_post(post: PostIn):
     user = await get_user_by_id(post.user_id)
     return {**data, "id": last_record_id, "rating": None, "tags": None, "user_name": user.name}
 
+
 @router.get("/posts", response_model=List[Post])
-async def get_all_posts(current_user: Optional[dict] = Depends(get_current_user_optional)):
+async def get_all_posts(pagination: Pagination, current_user: Optional[dict] = Depends(get_current_user_optional)):
     query = (
         sa.select(post_table, user_table.c.name.label("user_name"))
         .join(user_table, post_table.c.user_id == user_table.c.id)
@@ -32,17 +32,19 @@ async def get_all_posts(current_user: Optional[dict] = Depends(get_current_user_
             if current_user
             else post_table.c.is_public == True
         )
+        .offset(pagination.skip).fetch(pagination.size)
     )
     all_posts = await database.fetch_all(query)
 
     return await posts_with_extra_info(all_posts)
 
 @router.get("/my_posts", response_model=list[Post])
-async def get_my_posts(current_user: dict = Depends(get_current_user)):
+async def get_my_posts(pagination: Pagination, current_user: dict = Depends(get_current_user)):
     query = (
         sa.select(post_table, user_table.c.name.label("user_name"))
         .join(user_table, post_table.c.user_id == user_table.c.id)
         .where(post_table.c.user_id == current_user["id"])
+        .offset(pagination.skip).fetch(pagination.size)
     )
     my_posts = await database.fetch_all(query)
     return await posts_with_extra_info(my_posts)
@@ -84,7 +86,8 @@ async def post_with_extra_inf(post):
 @router.post("/set_rating", response_model=PostRating)
 async def post_rating(post: PostRating):
     data = post.model_dump()
-    # if rating > 3 or rating < 1: raise error
+    if data["rating"] > 5 or data["rating"] < 1:
+        raise HTTPException(status_code=406, detail="Rating value is out of range")
     query = rating_table.insert().values(data)
     await database.execute(query)
     return post
@@ -147,13 +150,14 @@ async def add_tags(post: PostTag):
 @router.get("/get_posts_tag", response_model=list[Post])
 async def get_post_with_tags(tag: TagIn):
     tags = await find_tags(tag)
-    if not tags:
-        raise HTTPException(status_code=404, detail="Tag not found")
+    if len(tags) == 0:
+        return []
 
     tag_ids = []
     for i in tags:
         tag_ids.append(i["id"])
 
+    # Get tags id from table post_tag
     query = post_tag_table.select().where(post_tag_table.c.tag_id.in_(tag_ids))
     post_tags = await database.fetch_all(query)
 
@@ -161,6 +165,8 @@ async def get_post_with_tags(tag: TagIn):
     for i in post_tags:
         post_ids.append(i["post_id"])
 
+    # Gets posts that have tags
     query = post_table.select().where(post_table.c.id.in_(post_ids))
     posts = await database.fetch_all(query)
     return await posts_with_extra_info(posts)
+

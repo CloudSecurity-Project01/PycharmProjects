@@ -28,3 +28,7 @@ class PostRating(BaseModel):
 class PostTag(BaseModel):
     post_id: int
     tags: list[str]
+
+class Pagination(BaseModel):
+    size: int
+    skip: int

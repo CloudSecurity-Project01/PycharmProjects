@@ -8,3 +8,4 @@ python-dotenv==1.0.1
 sendgrid==6.11.0
 SQLAlchemy==2.0.38
 starlette==0.45.3
+cryptography

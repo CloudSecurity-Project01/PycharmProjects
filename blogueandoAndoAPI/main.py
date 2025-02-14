@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
+import ssl
 from fastapi.middleware.cors import CORSMiddleware
 from blogueandoAndoAPI.routers.user import router as user_router
 from blogueandoAndoAPI.routers.post import router as posts_router
@@ -18,6 +19,10 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+
+ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+ssl_context.load_cert_chain(certfile='cert.pem', keyfile='key.pem', password=None)
+
 
 app.include_router(user_router)
 app.include_router(posts_router)
