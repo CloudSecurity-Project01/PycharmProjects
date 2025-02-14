@@ -113,7 +113,6 @@ async def confirm_email(request: Request, token: str):
         return templates.TemplateResponse("confirmation_success.html", {"request": request, "message": "Tu correo ha sido confirmado correctamente", "login_url": login_url})
     
     except jwt.PyJWTError as e:
-        print(e)
         resend_email_url = f"{str(request.base_url)}resend_email"
         return templates.TemplateResponse("confirmation_failure.html", {"request": request, "message": "El token no es válido o ha expirado", "resend_email_url": resend_email_url})
 

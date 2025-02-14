@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Query, Depends
 from blogueandoAndoAPI.models.post import PostIn, Post, Pagination, PostRating, PostTag
 from blogueandoAndoAPI.models.tag import TagIn
-from blogueandoAndoAPI.routers.tag import get_tags, find_tags
+from blogueandoAndoAPI.routers.tag import get_tags, find_tags, validate_post_existence
 from blogueandoAndoAPI.helpers.database import user_table, post_table, rating_table, post_tag_table, database, tag_table
 from blogueandoAndoAPI.helpers.security import get_current_user_optional, get_current_user
 from fastapi.security import OAuth2PasswordBearer
@@ -32,8 +32,10 @@ async def get_all_posts(pagination: Pagination, current_user: Optional[dict] = D
             if current_user
             else post_table.c.is_public == True
         )
-        .offset(pagination.skip).fetch(pagination.size)
+        .offset(pagination.skip)
+        .limit(pagination.size)
     )
+
     all_posts = await database.fetch_all(query)
 
     return await posts_with_extra_info(all_posts)
@@ -44,7 +46,8 @@ async def get_my_posts(pagination: Pagination, current_user: dict = Depends(get_
         sa.select(post_table, user_table.c.name.label("user_name"))
         .join(user_table, post_table.c.user_id == user_table.c.id)
         .where(post_table.c.user_id == current_user["id"])
-        .offset(pagination.skip).fetch(pagination.size)
+        .offset(pagination.skip)
+        .limit(pagination.size)
     )
     my_posts = await database.fetch_all(query)
     return await posts_with_extra_info(my_posts)
@@ -85,6 +88,11 @@ async def post_with_extra_inf(post):
 
 @router.post("/set_rating", response_model=PostRating)
 async def post_rating(post: PostRating):
+    try:
+        await validate_post_existence(post.post_id)
+    except Exception as exception:
+        raise exception
+
     data = post.model_dump()
     if data["rating"] > 5 or data["rating"] < 1:
         raise HTTPException(status_code=406, detail="Rating value is out of range")
@@ -101,17 +109,26 @@ async def get_rating(post_id: int):
         all_ratings = 0
         for r in ratings:
             all_ratings += r["rating"]
-        average = round(all_ratings / len(ratings), 2)
+        average = round(all_ratings / len(ratings))
         return average
     
 async def get_user_by_id(user_id: int):
     query = user_table.select().where(user_table.c.id == user_id)
-    return await database.fetch_one(query)
+    user = await database.fetch_one(query)
+
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    return user
+
 
 @router.post("/set_tags", response_model=Post)
 async def add_tags(post: PostTag):
+    try:
+        await validate_post_existence(post.post_id)
+    except Exception as exception:
+        raise exception
+
     tag_ids = []
-    
     # Iterate over tags, creating them if necessary
     for tag_name in post.tags:
         tag_data = {"tag": tag_name}
@@ -169,4 +186,3 @@ async def get_post_with_tags(tag: TagIn):
     query = post_table.select().where(post_table.c.id.in_(post_ids))
     posts = await database.fetch_all(query)
     return await posts_with_extra_info(posts)
-
