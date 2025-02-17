@@ -23,7 +23,7 @@ async def create_post(post: PostIn):
 
 
 @router.get("/posts", response_model=List[Post])
-async def get_all_posts(pagination: Pagination, current_user: Optional[dict] = Depends(get_current_user_optional)):
+async def get_all_posts(size: int = 10, skip: int = 0, current_user: Optional[dict] = Depends(get_current_user_optional)):
     query = (
         sa.select(post_table, user_table.c.name.label("user_name"))
         .join(user_table, post_table.c.user_id == user_table.c.id)
@@ -32,22 +32,22 @@ async def get_all_posts(pagination: Pagination, current_user: Optional[dict] = D
             if current_user
             else post_table.c.is_public == True
         )
-        .offset(pagination.skip)
-        .limit(pagination.size)
+        .offset(skip)
+        .limit(size)
     )
 
     all_posts = await database.fetch_all(query)
 
     return await posts_with_extra_info(all_posts)
 
-@router.get("/my_posts", response_model=list[Post])
-async def get_my_posts(pagination: Pagination, current_user: dict = Depends(get_current_user)):
+@router.get("/my_posts", response_model=List[Post])
+async def get_my_posts( size: int = 10, skip: int = 0, current_user: dict = Depends(get_current_user)):
     query = (
         sa.select(post_table, user_table.c.name.label("user_name"))
         .join(user_table, post_table.c.user_id == user_table.c.id)
         .where(post_table.c.user_id == current_user["id"])
-        .offset(pagination.skip)
-        .limit(pagination.size)
+        .offset(skip)
+        .limit(size)
     )
     my_posts = await database.fetch_all(query)
     return await posts_with_extra_info(my_posts)
