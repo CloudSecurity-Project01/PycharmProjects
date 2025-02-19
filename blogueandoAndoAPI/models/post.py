@@ -7,14 +7,14 @@ class PostIn(BaseModel):
     title: str
     content: str
     user_id: int
+    is_public: Optional[bool] = None
+    tags: Optional[list[str]] = None
 
 class Post(PostIn):
     model_config = ConfigDict(from_attributes=True)
     id: int
     publication_date: str
-    is_public: bool
-    rating: Optional[int]
-    tags: Optional[list[str]]
+    rating: Optional[float]
     user_name: str
 
 class MyPostIn(BaseModel):
