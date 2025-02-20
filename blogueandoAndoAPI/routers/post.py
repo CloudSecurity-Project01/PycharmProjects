@@ -6,7 +6,7 @@ from blogueandoAndoAPI.helpers.database import user_table, post_table, rating_ta
 from blogueandoAndoAPI.helpers.security import get_current_user_optional, get_current_user
 from blogueandoAndoAPI.helpers.pagination import paginate_query
 from fastapi.security import OAuth2PasswordBearer
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 import sqlalchemy as sa
 import datetime
 
@@ -40,49 +40,80 @@ async def create_post(post: PostIn, current_user: dict = Depends(get_current_use
 
 
 @router.get("/posts", response_model=Dict[str, Any])
-async def get_all_posts(size: int, skip: int, current_user: Optional[dict] = Depends(get_current_user_optional)):
-    base_query = (
-        sa.select(post_table, user_table.c.name.label("user_name"))
-        .join(user_table, post_table.c.user_id == user_table.c.id)
-        .where(
+async def get_posts(
+    size: int, 
+    skip: int, 
+    filter: str = "all",  
+    tags: Optional[List[str]] = Query(None),
+    tag_filter_mode: str = Query("and", regex="^(and|or)$"),
+    current_user: Optional[dict] = Depends(get_current_user_optional)
+):
+    base_query = sa.select(post_table, user_table.c.name.label("user_name")).join(
+        user_table, post_table.c.user_id == user_table.c.id
+    )
+
+    if filter == "mine":
+        if current_user is None:
+            raise HTTPException(status_code=401, detail="No estás autorizado para realizar esta acción")
+        user_id = current_user["id"]
+        base_query = base_query.where(post_table.c.user_id == user_id)
+    else:
+        base_query = base_query.where(
             sa.or_(
                 post_table.c.is_public == True,
                 ((current_user is not None) and (post_table.c.user_id == current_user["id"]))
             )
         )
-    )
 
-    all_posts, current_page, total_pages, total_items = await paginate_query(base_query, size, skip)
+    if tags:
+        tag_subquery = sa.select(post_tag_table.c.post_id).join(
+            tag_table, tag_table.c.id == post_tag_table.c.tag_id
+        )
+
+        if tag_filter_mode == "and":
+            for tag in tags:
+                base_query = base_query.where(
+                    post_table.c.id.in_(
+                        tag_subquery.where(tag_table.c.tag == tag)
+                    )
+                )
+        else:
+            base_query = base_query.where(
+                post_table.c.id.in_(
+                    tag_subquery.where(tag_table.c.tag.in_(tags))
+                )
+            )
+
+    posts, current_page, total_pages, total_items = await paginate_query(base_query, size, skip)
 
     return {
-        "posts": await posts_with_extra_info(all_posts),
+        "posts": await posts_with_extra_info(posts),
         "current_page": current_page,
         "total_pages": total_pages,
         "total_items": total_items
     }
 
 
-@router.get("/my_posts", response_model=Dict[str, Any])
-async def get_my_posts(size: int, skip: int, current_user: dict = Depends(get_current_user)):
-    if current_user is None:
-        raise HTTPException(status_code=401, detail="No estás autorizado para realizar esta acción")
-    
-    user_id = current_user["id"]
-    base_query = (
-        sa.select(post_table, user_table.c.name.label("user_name"))
-        .join(user_table, post_table.c.user_id == user_table.c.id)
-        .where(post_table.c.user_id == user_id)
-    )
+@router.get("/posts_ids", response_model=List[int])
+async def get_visible_post_ids(filter: str = "all", current_user: Optional[dict] = Depends(get_current_user_optional)):
+    base_query = sa.select(post_table.c.id)
 
-    my_posts, current_page, total_pages, total_items = await paginate_query(base_query, size, skip)
+    if filter == "mine":
+        if not current_user:
+            return []
+        base_query = base_query.where(post_table.c.user_id == current_user["id"])
+    else:
+        base_query = base_query.where(
+            sa.or_(
+                post_table.c.is_public == True,
+                ((current_user is not None) and (post_table.c.user_id == current_user["id"]))
+            )
+        )
 
-    return {
-        "posts": await posts_with_extra_info(my_posts),
-        "current_page": current_page,
-        "total_pages": total_pages,
-        "total_items": total_items
-    }
+    result = await database.fetch_all(base_query)
+    post_ids = [row["id"] for row in result]
 
+    return post_ids
 
 @router.get("/post", response_model=Post)
 async def get_post(id: int = Query(...), current_user: Optional[dict] = Depends(get_current_user_optional)):

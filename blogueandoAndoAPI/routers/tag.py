@@ -1,14 +1,40 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
+from sqlalchemy import select
+from typing import Dict, Any, Optional
+
 from blogueandoAndoAPI.models.tag import TagIn, Tag
-from blogueandoAndoAPI.models.post import Pagination
 from blogueandoAndoAPI.helpers.database import tag_table, database, post_tag_table, post_table
+from blogueandoAndoAPI.helpers.security import get_current_user_optional
+from blogueandoAndoAPI.helpers.pagination import paginate_query
 
 router = APIRouter()
 
-@router.get("/tags", response_model=list[Tag])
-async def all_tag(pagination: Pagination):
-    query = tag_table.select().offset(pagination.skip).limit(pagination.size)
-    return await database.fetch_all(query)
+@router.get("/tags", response_model=Dict[str, Any])
+async def all_tags(size: int, skip: int, filter: str = "all", current_user: Optional[dict] = Depends(get_current_user_optional)):
+    base_query = select(tag_table)
+
+    if filter == "mine":
+        if current_user is None:
+            raise HTTPException(status_code=401, detail="No estás autorizado para realizar esta acción")
+        
+        user_id = current_user["id"]
+        posts_query = select(post_tag_table.c.post_id).join(post_tag_table, post_tag_table.c.post_id == tag_table.c.id).where(tag_table.c.user_id == user_id)
+        post_ids = await database.fetch_all(posts_query)
+
+        if not post_ids:
+            return {"tags": [], "current_page": 0, "total_pages": 0, "total_items": 0}
+
+        tag_ids = [post["tag_id"] for post in post_ids]
+        base_query = base_query.where(tag_table.c.id.in_(tag_ids))
+
+    tags, current_page, total_pages, total_items = await paginate_query(base_query, size, skip)
+
+    return {
+        "tags": [tag["tag"] for tag in tags],
+        "current_page": current_page,
+        "total_pages": total_pages,
+        "total_items": total_items
+    }
 
 
 @router.get("/filter_tag", response_model=list[Tag])
