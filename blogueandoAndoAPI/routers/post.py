@@ -4,8 +4,9 @@ from blogueandoAndoAPI.models.tag import TagIn
 from blogueandoAndoAPI.routers.tag import get_tags, find_tags, validate_post_existence, assign_tags_to_post
 from blogueandoAndoAPI.helpers.database import user_table, post_table, rating_table, post_tag_table, database, tag_table
 from blogueandoAndoAPI.helpers.security import get_current_user_optional, get_current_user
+from blogueandoAndoAPI.helpers.pagination import paginate_query
 from fastapi.security import OAuth2PasswordBearer
-from typing import List, Optional
+from typing import Optional, Dict, Any
 import sqlalchemy as sa
 import datetime
 
@@ -38,9 +39,9 @@ async def create_post(post: PostIn, current_user: dict = Depends(get_current_use
     return {**await post_with_extra_inf(post_data), "user_name": current_user.user_name}
 
 
-@router.get("/posts", response_model=List[Post])
+@router.get("/posts", response_model=Dict[str, Any])
 async def get_all_posts(size: int, skip: int, current_user: Optional[dict] = Depends(get_current_user_optional)):
-    query = (
+    base_query = (
         sa.select(post_table, user_table.c.name.label("user_name"))
         .join(user_table, post_table.c.user_id == user_table.c.id)
         .where(
@@ -49,28 +50,38 @@ async def get_all_posts(size: int, skip: int, current_user: Optional[dict] = Dep
                 ((current_user is not None) and (post_table.c.user_id == current_user["id"]))
             )
         )
-        .offset(skip)
-        .limit(size)
     )
-    all_posts = await database.fetch_all(query)
-    return await posts_with_extra_info(all_posts)
+
+    all_posts, current_page, total_pages, total_items = await paginate_query(base_query, size, skip)
+
+    return {
+        "posts": await posts_with_extra_info(all_posts),
+        "current_page": current_page,
+        "total_pages": total_pages,
+        "total_items": total_items
+    }
 
 
-@router.get("/my_posts", response_model=List[Post])
+@router.get("/my_posts", response_model=Dict[str, Any])
 async def get_my_posts(size: int, skip: int, current_user: dict = Depends(get_current_user)):
     if current_user is None:
         raise HTTPException(status_code=401, detail="No estás autorizado para realizar esta acción")
+    
     user_id = current_user["id"]
-
-    query = (
+    base_query = (
         sa.select(post_table, user_table.c.name.label("user_name"))
         .join(user_table, post_table.c.user_id == user_table.c.id)
         .where(post_table.c.user_id == user_id)
-        .offset(skip)
-        .limit(size)
     )
-    my_posts = await database.fetch_all(query)
-    return await posts_with_extra_info(my_posts)
+
+    my_posts, current_page, total_pages, total_items = await paginate_query(base_query, size, skip)
+
+    return {
+        "posts": await posts_with_extra_info(my_posts),
+        "current_page": current_page,
+        "total_pages": total_pages,
+        "total_items": total_items
+    }
 
 
 @router.get("/post", response_model=Post)
@@ -121,14 +132,12 @@ async def update_post(post_id: int, post: PostIn, current_user: dict = Depends(g
         if post.tags is not None:
             await assign_tags_to_post(post_id, post.tags)
 
-        # Fetch updated rating
         rating = await get_rating(post_id)
 
-        # Build the response with the updated post details
         updated_post = {
             **updated_data,
             "id": post_id,
-            "rating": rating,  # Now properly fetched
+            "rating": rating,
             "tags": post.tags if post.tags is not None else [],
             "publication_date": existing_post["publication_date"],
             "user_name": current_user.user_name,
