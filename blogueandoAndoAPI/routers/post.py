@@ -229,21 +229,54 @@ async def post_with_extra_inf(post):
     return {**post, "rating": rating, "tags": tag}
 
 
-@router.post("/set_rating", response_model=PostRating)
-async def post_rating(post: PostRating):
+@router.post("/set_rating", response_model=Post)
+async def post_rating(post: PostRating, current_user: dict = Depends(get_current_user)):
+    if current_user is None or post.user_id != current_user.id:
+        raise HTTPException(status_code=401, detail="No está autorizado para calificar esta publicación")
+
     try:
         await validate_post_existence(post.post_id)
-    except Exception as exception:
-        raise exception
+    except Exception:
+        raise HTTPException(status_code=404, detail="No se encontró la publicación")
 
     async with database.transaction():
-        data = post.model_dump()
-        if data["rating"] > 5 or data["rating"] < 1:
+        post_query = post_table.select().where(post_table.c.id == post.post_id)
+        post_data = await database.fetch_one(post_query)
+
+        if post_data is None:
+            raise HTTPException(status_code=404, detail="No se encontró la publicación")
+
+        if post_data["user_id"] == current_user.id:
+            raise HTTPException(status_code=403, detail="No puedes calificar tu propia publicación")
+
+        user_query = user_table.select().where(user_table.c.id == post_data["user_id"])
+        post_owner = await database.fetch_one(user_query)
+
+        if not post_owner:
+            raise HTTPException(status_code=404, detail="No se encontró el usuario propietario de la publicación")
+
+        query = rating_table.select().where(
+            (rating_table.c.post_id == post.post_id)
+            & (rating_table.c.user_id == current_user.id)
+        )
+        existing_rating = await database.fetch_one(query)
+
+        if existing_rating:
+            raise HTTPException(status_code=409, detail="Ya has calificado esta publicación")
+
+        if post.rating > 5 or post.rating < 1:
             raise HTTPException(status_code=406, detail="El valor de la calificación está fuera del rango permitido")
+
+        data = {
+            "post_id": post.post_id,
+            "user_id": current_user.id,
+            "rating": post.rating,
+        }
         query = rating_table.insert().values(data)
         await database.execute(query)
-    
-    return post
+
+    return {**await post_with_extra_inf(post_data), "user_name": post_owner["name"]}
+
 
 
 @router.post("/set_tags", response_model=Post)
