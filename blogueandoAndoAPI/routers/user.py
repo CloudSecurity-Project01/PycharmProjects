@@ -1,22 +1,23 @@
 from fastapi import APIRouter, HTTPException, status, Depends, Request
 from fastapi.templating import Jinja2Templates
-from fastapi.security import OAuth2PasswordBearer
 from starlette.responses import HTMLResponse
 from datetime import timedelta
 import jwt
 
-from blogueandoAndoAPI.models.user import AuthenticationIn, Authentication, Token
+from blogueandoAndoAPI.models.user import AuthenticationIn, Authentication, Token, PasswordResetRequest, PasswordReset
 from blogueandoAndoAPI.helpers.security import (
     get_password_hash,
     verify_password,
     create_access_token,
     create_email_confirmation_token,
+    create_password_reset_token,
     get_current_user,
+    get_email_from_token,
     SECRET_KEY,
     ALGORITHM
 )
 from blogueandoAndoAPI.helpers.database import user_table, database
-from blogueandoAndoAPI.helpers.email import send_confirmation_email
+from blogueandoAndoAPI.helpers.email import send_confirmation_email, send_password_reset_email
 import os
 
 # Router initialization
@@ -156,3 +157,34 @@ async def resend_email(request: Request, user_email: str):
 @router.get("/user")
 async def get_user_data(current_user: dict = Depends(get_current_user)):
     return current_user
+
+# Password reset request
+@router.post("/password-reset-request")
+async def request_password_reset(request: PasswordResetRequest):
+    user = await database.fetch_one(user_table.select().where(user_table.c.email == request.email))
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado")
+    reset_token = create_password_reset_token(request.email)
+    reset_link = f"{FRONTEND_URL}/reset-password?token={reset_token}"
+    send_password_reset_email(request.email, user["name"], reset_link)
+    return {"message": "Te hemos enviado un enlace para recuperar tu contraseña."}
+
+@router.post("/reset-password")
+async def reset_password(request: PasswordReset):
+    email = get_email_from_token(request.token)
+    print(email)
+    if not email:
+        raise HTTPException(status_code=400, detail="El token no es válido o ha expirado")
+
+    result = await database.fetch_one(user_table.select().where(user_table.c.email == email))
+
+    if not result:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+    hashed_password = get_password_hash(request.new_password)
+
+    await database.execute(
+        user_table.update().where(user_table.c.email == email).values(password=hashed_password)
+    )
+
+    return {"message": "Contraseña restablecida exitosamente."}

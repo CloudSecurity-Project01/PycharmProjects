@@ -43,14 +43,31 @@ def create_email_confirmation_token(user_id: str, expires_delta: timedelta = tim
     to_encode = {"sub": str(user_id), "exp": datetime.now(timezone.utc) + expires_delta}
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
-# User authentication helpers
-async def get_user_from_token(token: str) -> Optional[dict]:
+def create_password_reset_token(email: str, expires_delta: timedelta = timedelta(hours=1)) -> str:
+    to_encode = {"sub": email, "exp": datetime.now(timezone.utc) + expires_delta}
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+
+
+def get_email_from_token(token: str):
     if not token:
         return None
-
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        email: str = payload.get("sub")
+        print(payload)
+        if "exp" in payload and datetime.fromtimestamp(payload["exp"], tz=timezone.utc) < datetime.now(timezone.utc):
+            return None
+        
+        return payload.get("sub")
+    except jwt.ExpiredSignatureError:
+        return None
+    except jwt.InvalidTokenError:
+        return None
+    
+# User authentication helpers
+async def get_user_from_token(token: str) -> Optional[dict]:
+    
+    try:
+        email: str = get_email_from_token(token)
 
         if not email:
             return None
