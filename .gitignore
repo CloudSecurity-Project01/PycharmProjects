@@ -1,6 +1,7 @@
 .gitattributes
 .env
 .env.example
+google_cloud_credentials.json
 
 venv/
 blogueandoAndoAPI/__pycache__/
