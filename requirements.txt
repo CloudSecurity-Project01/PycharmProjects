@@ -11,3 +11,4 @@ starlette==0.45.3
 cryptography
 cloud-sql-python-connector[pymysql]
 pymysql
+google-cloud-storage

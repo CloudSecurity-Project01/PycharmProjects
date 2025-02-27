@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException, Query, Depends
-from blogueandoAndoAPI.models.post import PostIn, Post, PostRating, PostTag
+from blogueandoAndoAPI.models.post import PostIn, Post, PostRating, PostTag, PostUpload
 from blogueandoAndoAPI.models.tag import TagIn
 from blogueandoAndoAPI.routers.tag import get_tags, find_tags, validate_post_existence, assign_tags_to_post
 from blogueandoAndoAPI.helpers.database import database
@@ -10,10 +10,13 @@ from blogueandoAndoAPI.helpers.database import Post_Tag as post_tag_table
 from blogueandoAndoAPI.helpers.database import Rating as rating_table
 from blogueandoAndoAPI.helpers.security import get_current_user_optional, get_current_user
 from blogueandoAndoAPI.helpers.pagination import paginate_query
+from blogueandoAndoAPI.helpers.storage import upload_post, get_post_content, delete_file
 from fastapi.security import OAuth2PasswordBearer
 from typing import Optional, Dict, Any, List
 import sqlalchemy as sa
 import datetime
+import asyncio
+import uuid
 
 router = APIRouter()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
@@ -23,16 +26,23 @@ async def create_post(post: PostIn, current_user: dict = Depends(get_current_use
     if current_user is None:
         raise HTTPException(status_code=401, detail="No estás autorizado para realizar esta acción")
 
-    post_dict = post.model_dump()
-    tags = post_dict.pop("tags", [])
-    data = {
-        **post_dict,
-        "publication_date": datetime.datetime.now().strftime("%D"),
-        "is_public": True,
-        "user_id": current_user.id,
-    }
+    file_id = str(uuid.uuid4())
+    folder = str(current_user.id)
+    filename = f"{folder}/posts/{file_id}.html"
 
-    async with database:
+    await upload_post(filename, post.content)
+
+    async with database.transaction():
+        post_dict = post.model_dump()
+        tags = post_dict.pop("tags", [])
+
+        data = {
+            **post_dict,
+            "content": filename,
+            "publication_date": datetime.datetime.now().strftime("%D"),
+            "is_public": True,
+            "user_id": current_user.id,
+        }
         query = post_table.insert().values(data)
         last_record_id = await database.execute(query)
 
@@ -41,8 +51,8 @@ async def create_post(post: PostIn, current_user: dict = Depends(get_current_use
 
         query = post_table.select().where(post_table.c.id == last_record_id)
         post_data = await database.fetch_one(query)
-        
-    return {**await post_with_extra_inf(post_data), "user_name": current_user.user_name}
+
+    return {**await post_with_extra_inf(post_data), "content": post.content,  "user_name": current_user.user_name}
 
 
 @router.get("/posts", response_model=Dict[str, Any])
@@ -92,8 +102,17 @@ async def get_posts(
 
     posts, current_page, total_pages, total_items = await paginate_query(base_query, size, skip)
 
+    posts = await posts_with_extra_info(posts)
+
+    async def fetch_content(post):
+        file_name = post["content"]
+        if file_name:
+            post["content"] = await get_post_content(file_name)
+
+    await asyncio.gather(*(fetch_content(post) for post in posts))
+
     return {
-        "posts": await posts_with_extra_info(posts),
+        "posts": posts,
         "current_page": current_page,
         "total_pages": total_pages,
         "total_items": total_items
@@ -139,7 +158,13 @@ async def get_post(id: int = Query(...), current_user: Optional[dict] = Depends(
     if not post:
         raise HTTPException(status_code=404, detail="No se encontró la publicación")
     
-    return await post_with_extra_inf(post)
+    post_dict = await post_with_extra_inf(post)
+
+    file_name = post_dict.get("content")
+    if file_name:
+        post_dict["content"] = await get_post_content(file_name)
+
+    return post_dict
 
 
 @router.put("/post/{post_id}", response_model=Post)
@@ -157,9 +182,16 @@ async def update_post(post_id: int, post: PostIn, current_user: dict = Depends(g
         if existing_post["user_id"] != current_user.id:
             raise HTTPException(status_code=403, detail="No tienes permiso para editar esta publicación")
 
+        file_name = existing_post["content"]
+        if not file_name:
+            raise HTTPException(status_code=500, detail="No se encontró el archivo de contenido asociado")
+
+        upload_success = await upload_post(file_name, post.content)
+        if not upload_success:
+            raise HTTPException(status_code=500, detail="Error al actualizar el contenido en almacenamiento")
+
         updated_data = {
             "title": post.title,
-            "content": post.content,
             "is_public": post.is_public,
         }
 
@@ -174,6 +206,7 @@ async def update_post(post_id: int, post: PostIn, current_user: dict = Depends(g
         updated_post = {
             **updated_data,
             "id": post_id,
+            "content": post.content,
             "rating": rating,
             "tags": post.tags if post.tags is not None else [],
             "publication_date": existing_post["publication_date"],
@@ -193,9 +226,11 @@ async def delete_post(post_id: int, current_user: dict = Depends(get_current_use
     existing_post = await database.fetch_one(query)
     if existing_post is None:
         raise HTTPException(status_code=404, detail="No se encontró la publicación")
-    
+
     if existing_post["user_id"] != current_user.id:
         raise HTTPException(status_code=403, detail="No tienes permiso para eliminar esta publicación")
+
+    file_name = existing_post["content"]
 
     async with database.transaction():
         query = post_tag_table.select().where(post_tag_table.c.post_id == post_id)
@@ -214,6 +249,11 @@ async def delete_post(post_id: int, current_user: dict = Depends(get_current_use
 
         query = post_table.delete().where(post_table.c.id == post_id)
         await database.execute(query)
+
+    if file_name:
+        deletion_success = await delete_file(file_name)
+        if not deletion_success:
+            print(f"Advertencia: No se pudo eliminar el archivo {file_name}")
 
     return {"detail": "Publicación eliminada con éxito"}
 
@@ -332,3 +372,13 @@ async def get_user_by_id(user_id: int):
     if user is None:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
     return user
+
+@router.post("/upload", status_code=200)
+async def uploadPost(data: PostUpload):
+    success = await upload_post(data.filename, data.content)
+    if not success:
+        raise HTTPException(status_code=500, detail="No se pudo subir el post. Inténtalo más tarde.")
+
+@router.get("/download", status_code=200)
+async def downloadPost(filename):
+    return get_post_content(filename)    

@@ -32,3 +32,7 @@ class PostTag(BaseModel):
 class Pagination(BaseModel):
     size: int
     skip: int
+
+class PostUpload(BaseModel):
+    filename: str
+    content: str
