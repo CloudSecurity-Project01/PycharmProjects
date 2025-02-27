@@ -2,7 +2,12 @@ from fastapi import APIRouter, HTTPException, Query, Depends
 from blogueandoAndoAPI.models.post import PostIn, Post, PostRating, PostTag
 from blogueandoAndoAPI.models.tag import TagIn
 from blogueandoAndoAPI.routers.tag import get_tags, find_tags, validate_post_existence, assign_tags_to_post
-from blogueandoAndoAPI.helpers.database import user_table, post_table, rating_table, post_tag_table, database, tag_table
+from blogueandoAndoAPI.helpers.database import database
+from blogueandoAndoAPI.helpers.database import Post as post_table
+from blogueandoAndoAPI.helpers.database import User as user_table
+from blogueandoAndoAPI.helpers.database import Tag as tag_table
+from blogueandoAndoAPI.helpers.database import Post_Tag as post_tag_table
+from blogueandoAndoAPI.helpers.database import Rating as rating_table
 from blogueandoAndoAPI.helpers.security import get_current_user_optional, get_current_user
 from blogueandoAndoAPI.helpers.pagination import paginate_query
 from fastapi.security import OAuth2PasswordBearer
@@ -18,15 +23,16 @@ async def create_post(post: PostIn, current_user: dict = Depends(get_current_use
     if current_user is None:
         raise HTTPException(status_code=401, detail="No estás autorizado para realizar esta acción")
 
-    async with database.transaction():
-        post_dict = post.model_dump()
-        tags = post_dict.pop("tags", [])
-        data = {
-            **post_dict,
-            "publication_date": datetime.datetime.now().strftime("%D"),
-            "is_public": True,
-            "user_id": current_user.id,
-        }
+    post_dict = post.model_dump()
+    tags = post_dict.pop("tags", [])
+    data = {
+        **post_dict,
+        "publication_date": datetime.datetime.now().strftime("%D"),
+        "is_public": True,
+        "user_id": current_user.id,
+    }
+
+    async with database:
         query = post_table.insert().values(data)
         last_record_id = await database.execute(query)
 

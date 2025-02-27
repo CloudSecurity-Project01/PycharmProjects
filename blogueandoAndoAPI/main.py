@@ -23,7 +23,7 @@ origins = [
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await database.connect()
+    database
     yield
     await database.disconnect()
 

@@ -9,7 +9,7 @@ from fastapi.security import OAuth2PasswordBearer
 from passlib.context import CryptContext
 from dotenv import load_dotenv
 
-from blogueandoAndoAPI.helpers.database import database, user_table
+from blogueandoAndoAPI.helpers.database import database
 
 # Load environment variables
 load_dotenv()

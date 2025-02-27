@@ -4,7 +4,10 @@ from typing import Dict, Any, Optional
 import sqlalchemy as sa
 
 from blogueandoAndoAPI.models.tag import TagIn, Tag
-from blogueandoAndoAPI.helpers.database import tag_table, database, post_tag_table, post_table
+from blogueandoAndoAPI.helpers.database import database
+from blogueandoAndoAPI.helpers.database import Post as post_table
+from blogueandoAndoAPI.helpers.database import Tag as tag_table
+from blogueandoAndoAPI.helpers.database import Post_Tag as post_tag_table
 from blogueandoAndoAPI.helpers.security import get_current_user_optional
 from blogueandoAndoAPI.helpers.pagination import paginate_query
 

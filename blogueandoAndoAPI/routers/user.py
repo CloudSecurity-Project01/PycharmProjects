@@ -16,8 +16,10 @@ from blogueandoAndoAPI.helpers.security import (
     SECRET_KEY,
     ALGORITHM
 )
-from blogueandoAndoAPI.helpers.database import user_table, database
+from blogueandoAndoAPI.helpers.database import database, engine
+from blogueandoAndoAPI.helpers.database import User as user_table
 from blogueandoAndoAPI.helpers.email import send_confirmation_email, send_password_reset_email
+from sqlalchemy import select, insert
 import os
 
 # Router initialization
@@ -33,38 +35,35 @@ LOGIN_URL = f"{FRONTEND_URL}/login"
 @router.post("/register")
 async def register(user: Authentication, request: Request):
     try:
-        async with database.transaction():
-            existing_user = await database.fetch_one(
-                user_table.select().where(user_table.c.email == user.email)
+        with engine.connect() as conn:
+            existing_user = conn.execute(
+                    select(user_table)
+                    .where(user_table.email == user.email)
+            ).first()
+
+        if existing_user:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Ya existe una cuenta con este correo electrónico"
             )
 
-            if existing_user:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Ya existe una cuenta con este correo electrónico"
-                )
+        hashed_password = get_password_hash(user.password)
 
-            hashed_password = get_password_hash(user.password)
-
-            await database.execute(
-                user_table.insert().values(
-                    name=user.name, email=user.email, password=hashed_password, is_verified=False
-                )
+        with engine.connect() as conn:
+            new_user = conn.execute(
+                insert(user_table),
+                [{"name": user.name, "email": user.email, "password": hashed_password, "is_verified": False}]
             )
 
-            new_user = await database.fetch_one(
-                user_table.select().where(user_table.c.email == user.email)
-            )
-            new_user_id = new_user["id"]
+        new_user_id = new_user.inserted_primary_key
+        confirmation_token = create_email_confirmation_token(new_user_id)
+        verification_link = f"{str(request.base_url)}confirm_email?token={confirmation_token}"
 
-            confirmation_token = create_email_confirmation_token(new_user_id)
-            verification_link = f"{str(request.base_url)}confirm_email?token={confirmation_token}"
-
-            try:
-                send_confirmation_email(user.email, user.name, verification_link)
-            except Exception as e:
-                print(e)
-                raise HTTPException(status_code=500, detail="Error al enviar el correo de confirmación")
+        try:
+            send_confirmation_email(user.email, user.name, verification_link)
+        except Exception as e:
+            print(e)
+            raise HTTPException(status_code=500, detail="Error al enviar el correo de confirmación")
 
         return {"message": "Revisa tu bandeja de entrada para activar tu cuenta"}
 
