@@ -6,7 +6,6 @@ from blogueandoAndoAPI.models.tag import Tag
 class PostIn(BaseModel):
     title: str
     content: str
-    user_id: int
     is_public: Optional[bool] = None
     tags: Optional[list[str]] = None
 
@@ -21,7 +20,6 @@ class MyPostIn(BaseModel):
     user_id: int
 
 class PostRating(BaseModel):
-    user_id: int
     post_id: int
     rating: int
 

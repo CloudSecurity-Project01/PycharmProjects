@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from dotenv import load_dotenv
 
-from blogueandoAndoAPI.helpers.database import database
+from blogueandoAndoAPI.helpers.database import session
 from blogueandoAndoAPI.routers.user import router as user_router
 from blogueandoAndoAPI.routers.post import router as posts_router
 from blogueandoAndoAPI.routers.tag import router as tags_router
@@ -23,9 +23,9 @@ origins = [
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    database
+    session
     yield
-    await database.disconnect()
+    await session.disconnect()
 
 app = FastAPI(lifespan=lifespan)
 

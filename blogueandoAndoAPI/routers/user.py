@@ -16,10 +16,9 @@ from blogueandoAndoAPI.helpers.security import (
     SECRET_KEY,
     ALGORITHM
 )
-from blogueandoAndoAPI.helpers.database import database, engine
+from blogueandoAndoAPI.helpers.database import insert, fetch_one, update
 from blogueandoAndoAPI.helpers.database import User as user_table
 from blogueandoAndoAPI.helpers.email import send_confirmation_email, send_password_reset_email
-from sqlalchemy import select, insert
 import os
 
 # Router initialization
@@ -35,11 +34,10 @@ LOGIN_URL = f"{FRONTEND_URL}/login"
 @router.post("/register")
 async def register(user: Authentication, request: Request):
     try:
-        with engine.connect() as conn:
-            existing_user = conn.execute(
-                    select(user_table)
-                    .where(user_table.email == user.email)
-            ).first()
+        existing_user = fetch_one(
+            user_table,
+            user_table.email == user.email
+        )
 
         if existing_user:
             raise HTTPException(
@@ -49,13 +47,13 @@ async def register(user: Authentication, request: Request):
 
         hashed_password = get_password_hash(user.password)
 
-        with engine.connect() as conn:
-            new_user = conn.execute(
-                insert(user_table),
-                [{"name": user.name, "email": user.email, "password": hashed_password, "is_verified": False}]
-            )
+        new_user = insert(user_table, {"name": user.name,
+                                       "email": user.email,
+                                       "password": hashed_password,
+                                       "is_verified": False})
 
-        new_user_id = new_user.inserted_primary_key
+        new_user_id = new_user.lastrowid
+
         confirmation_token = create_email_confirmation_token(new_user_id)
         verification_link = f"{str(request.base_url)}confirm_email?token={confirmation_token}"
 
@@ -76,8 +74,9 @@ async def register(user: Authentication, request: Request):
 # User Login
 @router.post("/login", response_model=Token)
 async def login_for_access_token(form_data: AuthenticationIn):
-    user = await database.fetch_one(
-        user_table.select().where(user_table.c.email == form_data.email)
+    user = fetch_one(
+        user_table,
+        user_table.email == form_data.email
     )
 
     if not user or not verify_password(form_data.password, user["password"]):
@@ -108,13 +107,18 @@ async def confirm_email(request: Request, token: str):
         if not user_id:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="El token no es válido")
 
-        user = await database.fetch_one(user_table.select().where(user_table.c.id == user_id))
+        user = fetch_one(
+            user_table,
+            user_table.id == user_id
+        )
 
         if not user:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado")
 
-        await database.execute(
-            user_table.update().where(user_table.c.id == user_id).values(is_verified=True)
+        update(
+            user_table,
+            user_table.id == user_id,
+            {user_table.is_verified: True}
         )
 
         return templates.TemplateResponse(
@@ -132,7 +136,10 @@ async def confirm_email(request: Request, token: str):
 # Resend Confirmation Email
 @router.get("/resend_email")
 async def resend_email(request: Request, user_email: str):
-    user = await database.fetch_one(user_table.select().where(user_table.c.email == user_email))
+    user = fetch_one(
+        user_table,
+        user_table.email == user_email
+    )
 
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado")
@@ -160,7 +167,10 @@ async def get_user_data(current_user: dict = Depends(get_current_user)):
 # Password reset request
 @router.post("/password-reset-request")
 async def request_password_reset(request: PasswordResetRequest):
-    user = await database.fetch_one(user_table.select().where(user_table.c.email == request.email))
+    user = fetch_one(
+        user_table,
+        user_table.email == request.email
+    )
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado")
     reset_token = create_password_reset_token(request.email)
@@ -175,15 +185,20 @@ async def reset_password(request: PasswordReset):
     if not email:
         raise HTTPException(status_code=400, detail="El token no es válido o ha expirado")
 
-    result = await database.fetch_one(user_table.select().where(user_table.c.email == email))
+    result = fetch_one(
+        user_table,
+        user_table.email == email
+    )
 
     if not result:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
 
     hashed_password = get_password_hash(request.new_password)
 
-    await database.execute(
-        user_table.update().where(user_table.c.email == email).values(password=hashed_password)
+    update(
+        user_table,
+        user_table.email == email,
+        {user_table.password: hashed_password}
     )
 
     return {"message": "Contraseña restablecida exitosamente."}

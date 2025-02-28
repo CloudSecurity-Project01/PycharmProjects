@@ -6,10 +6,12 @@ import jwt
 import sqlalchemy as sa
 from fastapi import Depends, HTTPException, Security, status
 from fastapi.security import OAuth2PasswordBearer
+from blogueandoAndoAPI.helpers.database import fetch_one_query
+from blogueandoAndoAPI.helpers.database import User as user_table
 from passlib.context import CryptContext
 from dotenv import load_dotenv
 
-from blogueandoAndoAPI.helpers.database import database
+from blogueandoAndoAPI.helpers.database import session
 
 # Load environment variables
 load_dotenv()
@@ -39,7 +41,7 @@ def create_access_token(data: dict, expires_delta: timedelta = None) -> str:
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
-def create_email_confirmation_token(user_id: str, expires_delta: timedelta = timedelta(hours=1)) -> str:
+def create_email_confirmation_token(user_id: int, expires_delta: timedelta = timedelta(hours=1)) -> str:
     to_encode = {"sub": str(user_id), "exp": datetime.now(timezone.utc) + expires_delta}
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
@@ -73,12 +75,12 @@ async def get_user_from_token(token: str) -> Optional[dict]:
             return None
 
         query = sa.select(
-            user_table.c.id, 
-            user_table.c.name.label("user_name"), 
-            user_table.c.email
-        ).where(user_table.c.email == email)
+            user_table.id,
+            user_table.name.label("user_name"),
+            user_table.email
+        ).where(user_table.email == email)
 
-        return await database.fetch_one(query)
+        return fetch_one_query(query)
 
     except jwt.ExpiredSignatureError:
         raise HTTPException(

@@ -4,10 +4,10 @@ from typing import Dict, Any, Optional
 import sqlalchemy as sa
 
 from blogueandoAndoAPI.models.tag import TagIn, Tag
-from blogueandoAndoAPI.helpers.database import database
 from blogueandoAndoAPI.helpers.database import Post as post_table
 from blogueandoAndoAPI.helpers.database import Tag as tag_table
 from blogueandoAndoAPI.helpers.database import Post_Tag as post_tag_table
+from blogueandoAndoAPI.helpers.database import fetch_all, insert, delete, fetch_one, fetch_all_query
 from blogueandoAndoAPI.helpers.security import get_current_user_optional
 from blogueandoAndoAPI.helpers.pagination import paginate_query
 
@@ -18,17 +18,18 @@ async def all_tags(size: int, skip: int, filter: str = "all", current_user: Opti
     if filter == "mine":
         if current_user is None:
             raise HTTPException(status_code=401, detail="No estás autorizado para realizar esta acción")
-        
-        available_post_ids_query = select(post_table.c.id).where(post_table.c.user_id == current_user["id"])
+
+        available_post_ids_query = select(post_table.id).where(post_table.user_id == current_user["id"])
+
     else:
-        available_post_ids_query = select(post_table.c.id).where(
+        available_post_ids_query = select(post_table.id).where(
             sa.or_(
-                post_table.c.is_public == True,
-                ((current_user is not None) and (post_table.c.user_id == current_user["id"]))
+                post_table.is_public == True,
+                ((current_user is not None) and (post_table.user_id == current_user["id"]))
             )
         )
 
-    available_post_ids = await database.fetch_all(available_post_ids_query)
+    available_post_ids = fetch_all_query(available_post_ids_query)
 
     if not available_post_ids:
         return {"tags": [], "current_page": 0, "total_pages": 0, "total_items": 0}
@@ -37,8 +38,8 @@ async def all_tags(size: int, skip: int, filter: str = "all", current_user: Opti
 
     tags_query = (
         select(tag_table)
-        .join(post_tag_table, post_tag_table.c.tag_id == tag_table.c.id)
-        .where(post_tag_table.c.post_id.in_(post_ids))
+        .join(post_tag_table, post_tag_table.tag_id == tag_table.id)
+        .where(post_tag_table.post_id.in_(post_ids))
     ).distinct()
        
     tags, current_page, total_pages, total_items = await paginate_query(tags_query, size, skip)
@@ -53,8 +54,8 @@ async def all_tags(size: int, skip: int, filter: str = "all", current_user: Opti
 
 @router.get("/filter_tag", response_model=list[Tag])
 async def find_tags(tag: TagIn):
-    query = tag_table.select()
-    tags = await database.fetch_all(query)
+    tags = fetch_all(
+        tag_table, True)
     filtered_tags = []
     for t in tags:
         if tag.tag.lower() in t["tag"].lower():
@@ -62,55 +63,78 @@ async def find_tags(tag: TagIn):
     return filtered_tags
 
 
-async def get_tags(post_id):
+@router.post("/create_tag", response_model=Tag)
+async def create_tag(tag: TagIn):
+    data = tag.dict()
+    new_tag = insert(
+        tag_table,
+        data
+    )
+    last_record_id = new_tag.lastrowid
+    return {**data, "id": last_record_id}
+
+def get_tags(post_id):
     try:
-        await validate_post_existence(post_id)
+        validate_post_existence(post_id)
     except Exception as exception:
         raise exception
 
-    query = post_tag_table.select().where(post_tag_table.c.post_id == post_id)
-    post_tags = await database.fetch_all(query)
+    post_tags = fetch_all(
+        post_tag_table,
+        post_tag_table.post_id == post_id
+    )
     tagIds = []
     for i in post_tags:
         tagIds.append(i["tag_id"])
 
-    query = tag_table.select().where(tag_table.c.id.in_(tagIds))
-    return await database.fetch_all(query)
+    return fetch_all(
+        tag_table,
+        tag_table.id.in_(tagIds)
+    )
 
 
-async def validate_post_existence(post_id: int):
-    query = post_table.select().where(post_table.c.id == post_id)
-    post = await database.fetch_one(query)
+def validate_post_existence(post_id: int):
+    post = fetch_one(
+        post_table,
+        post_table.id == post_id
+    )
     if post is None:
         raise HTTPException(status_code=404, detail="No se encontró la publicación")
 
-async def assign_tags_to_post(post_id: int, tags: list[str]):
-    query = post_tag_table.select().where(post_tag_table.c.post_id == post_id)
-    existing_tags = await database.fetch_all(query)
+def assign_tags_to_post(post_id: int, tags: list[str]):
+    existing_tags = fetch_all(
+        post_tag_table,
+        post_tag_table.post_id == post_id
+    )
     existing_tag_ids = {tag["tag_id"] for tag in existing_tags}
 
     tag_ids = []
     for tag_name in tags:
-        query = tag_table.select().where(tag_table.c.tag == tag_name)
-        existing_tag = await database.fetch_one(query)
+        existing_tag = fetch_one(
+            tag_table,
+            tag_table.tag == tag_name
+        )
 
         if existing_tag:
             tag_id = existing_tag["id"]
         else:
-            query = tag_table.insert().values(tag=tag_name)
-            tag_id = await database.execute(query)
-        
+            new_tag = insert(tag_table, {"tag": tag_name})
+            tag_id = new_tag.lastrowid
+
         tag_ids.append(tag_id)
 
     tags_to_remove = existing_tag_ids - set(tag_ids)
     if tags_to_remove:
-        query = post_tag_table.delete().where(
-            (post_tag_table.c.post_id == post_id) & (post_tag_table.c.tag_id.in_(tags_to_remove))
+        delete(
+            post_tag_table,
+            (post_tag_table.post_id == post_id) & (post_tag_table.tag_id.in_(tags_to_remove))
         )
-        await database.execute(query)
 
     for tag_id in tag_ids:
         if tag_id not in existing_tag_ids:
-            query = post_tag_table.insert().values(post_id=post_id, tag_id=tag_id)
-            await database.execute(query)
+            insert(
+                post_tag_table,
+                {"post_id": post_id, "tag_id": tag_id}
+            )
+
 
