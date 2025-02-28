@@ -5,22 +5,25 @@ from sqlalchemy import Column, Boolean, Integer, String, Float
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.ext.declarative import declarative_base
 import pymysql
+from dotenv import load_dotenv
 
 Base = declarative_base()
+
+load_dotenv()
 
 
 def connect_with_connector(connector) -> sqlalchemy.engine.base.Engine:
 
-    instance_connection_name = "cloudsecurity-project01-202510:us-central1:db-blogueando-ando-2025" #os.environ[]
-    db_user = "admin" #os.environ.get("DB_USER", "")
-    db_pass = "Diana!23" #os.environ["DB_PASS"]
-    db_name = "posts"#os.environ["DB_NAME"]
+    instance_connection_name = os.environ.get("INSTANCE_CONNECTION_NAME")
+    db_user = os.getenv("DB_USER", "")
+    db_pass = os.getenv("DB_PASS")
+    db_name = os.getenv("DB_NAME")
 
     ip_type = IPTypes.PRIVATE if os.environ.get("PRIVATE_IP") else IPTypes.PUBLIC
 
     connector_args = {
         "cafile": 'cert.pem',
-        "validate_host": False,
+        "validate_host": False
     }
 
     def get_connection() -> pymysql.Connection:
