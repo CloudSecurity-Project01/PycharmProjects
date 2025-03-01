@@ -15,7 +15,6 @@ from fastapi.security import OAuth2PasswordBearer
 from typing import Optional, Dict, Any, List
 import sqlalchemy as sa
 import datetime
-import asyncio
 import uuid
 
 router = APIRouter()
@@ -26,18 +25,22 @@ async def create_post(post: PostIn, current_user: dict = Depends(get_current_use
     if current_user is None:
         raise HTTPException(status_code=401, detail="No estás autorizado para realizar esta acción")
 
-    file_id = str(uuid.uuid4())
+    content_id = str(uuid.uuid4())
     folder = str(current_user.id)
-    filename = f"{folder}/posts/{file_id}.html"
+    location = f"{folder}/posts/{content_id}.html"
 
-    await upload_post(filename, post.content)
+    upload_success = await upload_post(location, post.content)
+
+    if not upload_success:
+        raise HTTPException(status_code=500, detail="Hubo un error guardando el contenido de tu publicación")
 
     post_dict = post.model_dump()
     tags = post_dict.pop("tags", [])
 
     data = {
         **post_dict,
-        "content": filename,
+        "content": str(post.content)[:500],
+        "content_location": location,
         "publication_date": datetime.datetime.now().strftime("%D"),
         "is_public": True,
         "user_id": current_user.id,
@@ -45,7 +48,8 @@ async def create_post(post: PostIn, current_user: dict = Depends(get_current_use
 
     new_post = insert(
         post_table,
-        data)
+        data
+    )
 
     last_record_id = new_post.lastrowid
 
@@ -57,7 +61,7 @@ async def create_post(post: PostIn, current_user: dict = Depends(get_current_use
         post_table.id == last_record_id
     )
 
-    return {**post_with_extra_inf(post_data), "content": post.content,  "user_name": current_user.user_name}
+    return {**post_with_extra_inf(post_data), "content": post.content, "user_name": current_user.user_name}
 
 
 @router.get("/posts", response_model=Dict[str, Any])
@@ -67,7 +71,7 @@ async def get_posts(
     filter: str = "all",  
     tags: Optional[List[str]] = Query(None),
     tag_filter_mode: str = Query("and", regex="^(and|or)$"),
-    current_user: Optional[dict] = Depends(get_current_user)
+    current_user: Optional[dict] = Depends(get_current_user_optional)
 ):
     base_query = sa.select(post_table, user_table.name.label("user_name")).join(
         user_table, post_table.user_id == user_table.id
@@ -107,17 +111,8 @@ async def get_posts(
 
     posts, current_page, total_pages, total_items = await paginate_query(base_query, size, skip)
 
-    posts = posts_with_extra_info(posts)
-
-    #Para la lista no es necesario el archivo, solo para el detalle
-    #async def fetch_content(post):
-    #    file_name = post["content"]
-    #    if file_name:
-    #        post["content"] = await get_post_content(file_name)
-    #await asyncio.gather(*(fetch_content(post) for post in posts))
-
     return {
-        "posts": posts,
+        "posts": posts_with_extra_info(posts),
         "current_page": current_page,
         "total_pages": total_pages,
         "total_items": total_items
@@ -165,9 +160,9 @@ async def get_post(id: int = Query(...), current_user: Optional[dict] = Depends(
     
     post_dict = post_with_extra_inf(post)
 
-    file_name = post_dict.get("content")
-    if file_name:
-        post_dict["content"] = await get_post_content(file_name)
+    content_location = post_dict.get("content_location")
+    if content_location:
+        post_dict["content"] = await get_post_content(content_location)
 
     return post_dict
 
@@ -186,17 +181,18 @@ async def update_post(post_id: int, post: PostIn, current_user: dict = Depends(g
     if existing_post["user_id"] != current_user.id:
         raise HTTPException(status_code=403, detail="No tienes permiso para editar esta publicación")
 
-    file_name = existing_post["content"]
+    file_name = existing_post["content_location"]
     if not file_name:
         raise HTTPException(status_code=500, detail="No se encontró el archivo de contenido asociado")
 
-    upload_success = await upload_post(file_name, post.content)
+    upload_success = await upload_post(file_name, post.content_location)
     if not upload_success:
         raise HTTPException(status_code=500, detail="Error al actualizar el contenido en almacenamiento")
 
     updated_data = {
         post_table.title: post.title,
         post_table.is_public: post.is_public,
+        post_table.content: str(post.content)[:500]
     }
 
     update(
@@ -239,7 +235,7 @@ async def delete_post(post_id: int, current_user: dict = Depends(get_current_use
     if existing_post["user_id"] != current_user.id:
         raise HTTPException(status_code=403, detail="No tienes permiso para eliminar esta publicación")
 
-    file_name = existing_post["content"]
+    content_location = existing_post["content_location"]
 
     query = post_tag_table.select().where(post_tag_table.post_id == post_id)
     post_tags = fetch_all(
@@ -258,10 +254,10 @@ async def delete_post(post_id: int, current_user: dict = Depends(get_current_use
 
     delete(post_table, post_table.id == post_id)
 
-    if file_name:
-        deletion_success = await delete_file(file_name)
+    if content_location:
+        deletion_success = await delete_file(content_location)
         if not deletion_success:
-            print(f"Advertencia: No se pudo eliminar el archivo {file_name}")
+            print(f"Advertencia: No se pudo eliminar el archivo {content_location}")
 
     return {"detail": "Publicación eliminada con éxito"}
 

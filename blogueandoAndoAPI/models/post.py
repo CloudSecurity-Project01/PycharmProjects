@@ -6,12 +6,14 @@ from blogueandoAndoAPI.models.tag import Tag
 class PostIn(BaseModel):
     title: str
     content: str
+    user_id: int
     is_public: Optional[bool] = None
     tags: Optional[list[str]] = None
 
 class Post(PostIn):
     model_config = ConfigDict(from_attributes=True)
     id: int
+    content_location: str
     publication_date: str
     rating: Optional[float]
     user_name: str

@@ -61,7 +61,8 @@ class Post(Base):
     id = Column(Integer, primary_key=True)
     user_id = Column("user_id", sqlalchemy.ForeignKey("users.id"), nullable=False)
     title = Column(String(250), nullable=False)
-    content = Column(String(250))
+    content = Column(String(500))
+    content_location = Column(String(250))
     publication_date = Column(String(50), nullable=False)
     is_public = Column(Boolean, nullable=False, default=True)
 
