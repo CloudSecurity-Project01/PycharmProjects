@@ -172,8 +172,10 @@ async def update_post(post_id: int, post: PostIn, current_user: dict = Depends(g
     if current_user is None:
         raise HTTPException(status_code=401, detail="No estás autorizado para realizar esta acción")
 
-    query = post_table.select().where(post_table.id == post_id)
-    existing_post = fetch_one_query(query)
+    existing_post = fetch_one(
+            post_table,
+            post_table.id == post_id
+        )
 
     if existing_post is None:
         raise HTTPException(status_code=404, detail="No se encontró la publicación")
@@ -181,11 +183,11 @@ async def update_post(post_id: int, post: PostIn, current_user: dict = Depends(g
     if existing_post["user_id"] != current_user.id:
         raise HTTPException(status_code=403, detail="No tienes permiso para editar esta publicación")
 
-    file_name = existing_post["content_location"]
-    if not file_name:
+    content_location = existing_post["content_location"]
+    if not content_location:
         raise HTTPException(status_code=500, detail="No se encontró el archivo de contenido asociado")
 
-    upload_success = await upload_post(file_name, post.content_location)
+    upload_success = await upload_post(content_location, post.content)
     if not upload_success:
         raise HTTPException(status_code=500, detail="Error al actualizar el contenido en almacenamiento")
 
@@ -207,9 +209,11 @@ async def update_post(post_id: int, post: PostIn, current_user: dict = Depends(g
     rating = get_rating(post_id)
 
     updated_post = {
-        **updated_data,
         "id": post_id,
+        "title": post.title,
+        "is_public": post.is_public,
         "content": post.content,
+        "content_location": existing_post["content_location"],
         "rating": rating,
         "tags": post.tags if post.tags is not None else [],
         "publication_date": existing_post["publication_date"],
@@ -217,6 +221,7 @@ async def update_post(post_id: int, post: PostIn, current_user: dict = Depends(g
         "user_id": current_user.id,
     }
 
+    print(updated_data)
     return updated_post
 
 
@@ -237,7 +242,6 @@ async def delete_post(post_id: int, current_user: dict = Depends(get_current_use
 
     content_location = existing_post["content_location"]
 
-    query = post_tag_table.select().where(post_tag_table.post_id == post_id)
     post_tags = fetch_all(
         post_tag_table,
         post_tag_table.post_id == post_id
@@ -391,7 +395,6 @@ def get_rating(post_id: int):
 
 
 async def get_user_by_id(user_id: int):
-    query = user_table.select().where(user_table.id == user_id)
     user = fetch_one(
         user_table,
         user_table.id == user_id
