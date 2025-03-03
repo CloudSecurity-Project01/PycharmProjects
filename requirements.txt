@@ -11,3 +11,5 @@ cryptography
 cloud-sql-python-connector[pymysql]
 pymysql
 google-cloud-storage
+uvicorn
+jinja2
